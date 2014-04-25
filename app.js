@@ -1,96 +1,111 @@
-var gpio = require("pi-gpio")
-var async = require("async")
+var gpio	= require("pi-gpio")
+  , async	= require("async")
 
-var arg = process.argv.slice(2)
+  , arg		= process.argv.slice(2)
+  , time	= arg || 1
 
-var time = arg || 1 
+  , writing
 
-var writing
+  , steps = [
+		function(){on(16)},
+		function(){on(12)},
+		function(){off(16)},
+		function(){off(12)}
+	]
 
-var open = function (pin, callback) {
-	gpio.open(pin, "output", function(err) {
-		if (callback !== undefined) callback()
-	}) 
-}
-var asyncOpen = function(pin) {
-	return function(callback){
-		open(pin, function(){
-			callback(null, "Opened pin " + pin)
+  , step = function(steps, delay){
+		steps.forEach(function(element, index) {
+			if (index === 0) element()
+			else {
+				setTimeout(function(){
+					element()
+				}, delay*index)
+			}
 		})
 	}
-}
-var set = function(pin, value, callback, force) {
-	if (writing || force) {	
-		if (callback === undefined)
-			gpio.write(pin, value)
-		else
-			gpio.write(pin, value, callback)
+
+  , open = function (pin, callback) {
+		gpio.open(pin, "output", function(err) {
+			if (callback !== undefined) callback()
+		})
 	}
-}
-var on = function(pin, callback, force) {
-	set(pin, 1, callback, force)
-}
-var off = function(pin, callback, force) {
-	set(pin, 0, callback, force)
-}
-var close = function (pin, callback) {
-	off(pin, function(){
-		if (callback === undefined)
-			gpio.close(pin)
-		else
+
+  , close = function (pin, callback) {
+		off(pin, function(){
 			gpio.close(pin, callback)
-	}, true)
-}
-var asyncClose = function(pin) {
-	return function(callback){
-		close(pin, function(){
-			callback(null, 'Closed pin ' + pin)
-		})
+		}, true)
 	}
-}
+
+  , openAsync = function(pin) {
+		return function(callback){
+			open(pin, function(){
+				callback(null, "Opened pin " + pin)
+			})
+		}
+	}
+
+  , closeAsync = function(pin) {
+		return function(callback){
+			close(pin, function(){
+				callback(null, 'Closed pin ' + pin)
+			})
+		}
+	}
+
+  , set = function(pin, value, callback, force) {
+		if (writing || force) {
+			if (callback === undefined)
+				gpio.write(pin, value)
+			else
+				gpio.write(pin, value, callback)
+		}
+	}
+
+  , on = function(pin, callback, force) {
+		set(pin, 1, callback, force)
+	}
+
+  , off = function(pin, callback, force) {
+		set(pin, 0, callback, force)
+	}
 
 //
 // END
 //
 
+// Allow ctrl+c to not end the process.
 process.stdin.resume()
 process.on('SIGINT', function() {
+
 	writing = false
+
 	async.parallel([
-		asyncClose(12),
-		asyncClose(16)	
+
+		closeAsync(12),
+		closeAsync(16)
+
 	], function(err, results){
 		console.log(results)
 		process.exit()
 	})
+
 })
 
 //
 // START
 //
 async.parallel([
-	asyncOpen(16),
-	asyncOpen(12)
+
+	openAsync(16),
+	openAsync(12)
+
 ], function(err, results) {
-	console.log(results)	
+	console.log(results)
 
 	writing = true
 
-	setInterval(function() {
-
-		on(16)
-
-		setTimeout(function(){
-			on(12)
-		}, time)  
-
-		setTimeout(function() {
-			off(16)
-		}, time*2)
-
-		setTimeout(function() {
-			off(12)
-		}, time*3)
-
-	}, time*4)
+	setInterval(
+		function() { step(steps, time) },
+		time*steps.length
+	)
 })
